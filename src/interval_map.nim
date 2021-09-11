@@ -23,9 +23,12 @@ proc overlaps[S](a, b: Slice[S]): bool =
 proc toString[S, T](node: ptr Node[S, T]): string =
   if node.isNil:
     return
-  result = '[' & $node.interval.a & ' ' & $node.left.toString() & ' ' &
+  let
+    left = $node.left.toString()
+    right = $node.right.toString()
+  result = '[' & $node.interval.a & ' ' & left & ' ' &
                  $node.value & ':' & $node.priority & ' ' &
-                 $node.right.toString() & ' ' & $node.interval.b & "->" &
+                 right & ' ' & $node.interval.b & "->" &
                  $node.rightmost & ']'
 
 
@@ -45,6 +48,7 @@ proc seed*[S, T](im: var IntervalMap[S, T], seed: uint64) =
 
 
 proc rotateLeft[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
+  echo "rotateLeft"
   # FIXME implement handilng rightmost in this
   let w = u.right
   w.parent = u.parent
@@ -71,6 +75,7 @@ proc rotateLeft[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
 
 
 proc rotateRight[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
+  echo "rotateRight"
   # FIXME implement handilng rightmost in this
   let w = u.left
   w.parent = u.parent
@@ -175,9 +180,9 @@ proc `[]`*[S, T](im: IntervalMap[S, T], key: S): seq[T] =
   getIntersecting(im.root, (key)..(key))
 
 
-proc find*[S, T](im: IntervalMap[S, T], value: T): ptr Node[S, T] =
-  # TODO implement if I need it
-  discard
+# proc find*[S, T](im: IntervalMap[S, T], value: T): ptr Node[S, T] =
+#   # TODO implement if I need it
+#   discard
 
 
 proc excl*[S, T](im: var IntervalMap[S, T], node: ptr Node[S, T]) =
@@ -197,10 +202,14 @@ proc excl*[S, T](im: var IntervalMap[S, T], node: ptr Node[S, T]) =
       im.root = walk.parent
 
   # now remove the leaf
-    if walk.parent.left == walk:
-      walk.parent.left = nil
-    else:
-      walk.parent.right = nil
+  if walk.parent.left == walk:
+    walk.parent.left = nil
+    let wprr = (if walk.parent.right.isNil: S.low else: walk.parent.right.rightmost)
+    walk.parent.rightmost = max(walk.parent.interval.b, wprr)
+  else:
+    walk.parent.right = nil
+    let wplr = (if walk.parent.left.isNil: S.low else: walk.parent.left.rightmost)
+    walk.parent.rightmost = max(walk.parent.interval.b, wplr)
 
   # TODO fix rightmost
 

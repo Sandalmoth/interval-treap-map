@@ -10,17 +10,17 @@ test "free pass":
 
 test "scratch":
   var im: IntervalMap[int, string]
-  var loc = im.incl(2..7, "howdy")
-  im[3..6] = "howdy"
+  var loc = im.incl(1..5, "howdy")
+  im[2..4] = "howdy"
 
   echo im
-  for i in 0..<10:
+  for i in 0..<7:
     echo i, ' ', im[i]
 
   im.excl(loc)
 
   echo im
-  for i in 0..<10:
+  for i in 0..<7:
     echo i, ' ', im[i]
 
 
