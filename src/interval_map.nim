@@ -16,12 +16,17 @@ type
     rng: Lcg
 
 
+proc overlaps[S](a, b: Slice[S]): bool =
+  (a.a <= b.b) and (a.b >= b.a)
+
+
 proc toString[S, T](node: ptr Node[S, T]): string =
   if node.isNil:
     return
   result = '[' & $node.interval.a & ' ' & $node.left.toString() & ' ' &
                  $node.value & ':' & $node.priority & ' ' &
-                 $node.right.toString() & ' ' & $node.interval.b & ']'
+                 $node.right.toString() & ' ' & $node.interval.b & "->" &
+                 $node.rightmost & ']'
 
 
 proc `$`*[S, T](im: IntervalMap[S, T]): string =
@@ -57,6 +62,13 @@ proc rotateLeft[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
     im.root = w
     w.parent = nil
 
+  let
+    ulr = (if u.left.isNil: S.low else: u.left.rightmost)
+    wlr = (if w.left.isNil: S.low else: w.left.rightmost)
+    wrr = (if w.right.isNil: S.low else: w.right.rightmost)
+  u.rightmost = max(u.interval.b, max(ulr, wlr))
+  w.rightmost = max(w.interval.b, max(u.rightmost, wrr))
+
 
 proc rotateRight[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
   # FIXME implement handilng rightmost in this
@@ -76,17 +88,30 @@ proc rotateRight[S, T](im: var IntervalMap[S, T], u: ptr Node[S, T]) =
     im.root = w
     w.parent = nil
 
+  let
+    urr = (if u.right.isNil: S.low else: u.right.rightmost)
+    wrr = (if w.right.isNil: S.low else: w.right.rightmost)
+    wlr = (if w.left.isNil: S.low else: w.left.rightmost)
+  u.rightmost = max(u.interval.b, max(urr, wrr))
+  w.rightmost = max(w.interval.b, max(u.rightmost, wlr))
 
-proc `[]=`*[S, T](im: var IntervalMap[S, T], key: Slice[S], val: sink T) =
+
+proc incl*[S, T](
+  im: var IntervalMap[S, T], key: Slice[S], val: sink T
+): ptr Node[S, T] =
   ## Insert value ``val`` at interval ``key``
   let node: ptr Node[S, T] = create(Node[S, T])
+  result = node
+
   node.value = val
   node.interval = key
+  node.rightmost = key.b
   node.priority = im.rng.rand().int
+
+  inc im.counter
 
   if im.root.isNil:
     im.root = node
-    inc im.counter
     return
 
   # tree is not empty, find correct position
@@ -106,7 +131,13 @@ proc `[]=`*[S, T](im: var IntervalMap[S, T], key: Slice[S], val: sink T) =
         break
       else: walk = walk.right
 
-  # preserve heap property of the priority through rotations
+  # traverse upwards and update the rightmost limits
+  walk = node
+  while not walk.parent.isNil:
+    walk = walk.parent
+    walk.rightmost = max(node.rightmost, walk.rightmost)
+
+  # finally, preserve heap property of the priority through rotations
   # (this defines a treap)
   while not node.parent.isNil and node.parent.priority > node.priority:
     if node.parent.right == node:
@@ -116,12 +147,66 @@ proc `[]=`*[S, T](im: var IntervalMap[S, T], key: Slice[S], val: sink T) =
   if node.parent.isNil:
     im.root = node
 
-  inc im.counter
+
+proc `[]=`*[S, T](im: var IntervalMap[S, T], key: Slice[S], val: sink T) =
+    discard im.incl(key, val)
+
+
+proc getIntersecting[S, T](node: ptr Node[S, T], key: Slice[S]): seq[T] =
+  # Recursive internal implementation of operator `[]`
+  if node.isNil:
+    return
+
+  if overlaps(key, node.interval):
+    result.add(node.value)
+  if not node.left.isNil and key.a < node.rightmost:
+    result = result & getIntersecting[S, T](node.left, key)
+  if not node.right.isNil and node.interval.a <= key.b:
+    result = result & getIntersecting[S, T](node.right, key)
 
 
 proc `[]`*[S, T](im: IntervalMap[S, T], key: Slice[S]): seq[T] =
+  ## Find all elements that intersect ``key``, and return them in a seq
+  getIntersecting(im.root, key)
+
+
+proc `[]`*[S, T](im: IntervalMap[S, T], key: S): seq[T] =
+  ## Find all elements that intersect ``key`` and return them in a seq
+  getIntersecting(im.root, (key)..(key))
+
+
+proc find*[S, T](im: IntervalMap[S, T], value: T): ptr Node[S, T] =
+  # TODO implement if I need it
   discard
 
+
+proc excl*[S, T](im: var IntervalMap[S, T], node: ptr Node[S, T]) =
+  ## Remove node in the map
+  # first move the node to be a leaf
+  var walk = node
+  while not (walk.left.isNil and walk.right.isNil):
+    if walk.left.isNil:
+      im.rotateLeft(walk)
+    elif walk.right.isNil:
+      im.rotateRight(walk)
+    elif walk.left.priority < walk.right.priority:
+      im.rotateRight(walk)
+    else:
+      im.rotateLeft(walk)
+    if im.root == walk:
+      im.root = walk.parent
+
+  # now remove the leaf
+    if walk.parent.left == walk:
+      walk.parent.left = nil
+    else:
+      walk.parent.right = nil
+
+  # TODO fix rightmost
+
+  dec im.counter
+  `=destroy`(walk)
+  dealloc(walk)
 
 
 
